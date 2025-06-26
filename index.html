@@ -122,7 +122,9 @@
   
   <div id="pdfArea" class="bg-white p-4">
     <h1 id="pdfTitle" class="text-xl font-bold mb-4 text-center">Summary</h1>
-    <div>
+    
+      <div class="overflow-x-auto print:overflow-visible">
+  
       <table id="dutyTable" class="min-w-full text-center table-auto border-collapse">
         <thead>
           <tr>
@@ -533,6 +535,4 @@ function getRestMinutes(prevDay, prevSignOff, currDay, currSignOn) {
 
 function calcNightHours(start, end) {
   let total = 0;
-  for (let i = 0; i < (end - start + 1440) % 1440; i++) {
-    const min = (start + i) % 1440;
-  
+  for (let i = 0; i < (end - start + 
