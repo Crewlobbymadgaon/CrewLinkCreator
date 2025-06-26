@@ -535,4 +535,453 @@ function getRestMinutes(prevDay, prevSignOff, currDay, currSignOn) {
 
 function calcNightHours(start, end) {
   let total = 0;
-  for (let i = 0; i < (end - start + 
+  for (let i = 0; i < (end - start + 1440) % 1440; i++) {
+    const min = (start + i) % 1440;
+    if (min >= 1320 || min < 360) total++;
+  }
+  return total;
+}
+
+function populateStationDropdowns() {
+  fromStation.innerHTML = '<option value="">From</option>';
+  toStation.innerHTML = '<option value="">To</option>';
+  stations.forEach(st => {
+    fromStation.innerHTML += `<option value="${st}">${st}</option>`;
+    toStation.innerHTML += `<option value="${st}">${st}</option>`;
+  });
+}
+
+function adjustSignOffDay(startDay, depTime, signOffTime) {
+  const depMin = parseTime(depTime);
+  const signOffMin = parseTime(signOffTime);
+  let shift = signOffMin < depMin ? 1 : 0;
+  const newIndex = (dayToIndex[startDay] + shift) % 7;
+  return Object.keys(dayToIndex).find(k => dayToIndex[k] === newIndex);
+}
+
+function addRow() {
+  const hq = hqSelect.value;
+  const link = linkSelect.value;
+  const train = trainNo.value.trim();
+  const from = fromStation.value;
+  const to = toStation.value;
+  const day = dutyDay.value;
+  if (!hq || !link || !train || !from || !to || !day) return alert("Fill all fields");
+
+  const directionKey = `${from}-${to}`;
+  const timingsList = trainTimings[directionKey] || [];
+  const timing = timingsList.find(t => t.train === train);
+  if (!timing) return alert("Train timing not found for selected HQ and route.");
+
+  const dep = timing.dep;
+  const arr = timing.arr;
+  let signOnMin = parseTime(dep) - 30;
+  if (signOnMin < 0) signOnMin += 1440;
+  let signOffMin = parseTime(arr) + 30;
+  if (signOffMin >= 1440) signOffMin -= 1440;
+
+  const signOn = formatTime(signOnMin);
+  const signOff = formatTime(signOffMin);
+  let dutyMin = signOffMin - signOnMin;
+  if (dutyMin < 0) dutyMin += 1440;
+
+  const duty = formatTime(dutyMin);
+  const night = formatTime(calcNightHours(signOnMin, signOffMin));
+  const km = kmMap[directionKey] || '--';
+
+  if (!crewLinkData[hq][link]) crewLinkData[hq][link] = [];
+  const data = crewLinkData[hq][link];
+
+  let hqRest = '--', osRest = '--';
+  if (data.length > 0) {
+    const prev = data[data.length - 1];
+    const actualPrevSignOffDay = adjustSignOffDay(prev[12], prev[3], prev[6]);
+    const restMin = getRestMinutes(actualPrevSignOffDay, prev[6], day, signOn);
+    if (prev[2] === hq && from === hq) hqRest = formatTime(restMin);
+    else osRest = formatTime(restMin);
+  }
+
+  const row = [train, from, to, dep, arr, signOn, signOff, duty, night, km, hqRest, osRest, day];
+  data.push(row);
+  saveToLocalStorage(hq, link);
+  loadCrewLinkData(hq, link);
+
+  trainNo.value = '';
+  fromStation.value = '';
+  toStation.value = '';
+  dutyDay.value = '';
+}
+
+function loadCrewLinkData(hq, link) {
+  const key = `crewData-${hq}-${link}`;
+  const stored = localStorage.getItem(key);
+  if (stored) crewLinkData[hq][link] = JSON.parse(stored);
+  else crewLinkData[hq][link] = [];
+
+  const data = crewLinkData[hq][link];
+  tableBody.innerHTML = "";
+
+  data.forEach((row, idx) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${idx + 1}</td>` +
+      row.slice(0, 12).map((cell, i) =>
+        `<td contenteditable="true" data-col="${i}" onblur="updateRow(this, ${idx})">${cell}</td>`
+      ).join('') +
+      `<td class="no-print"><button onclick="deleteRow(${idx})" class="text-red-600">🗑️</button></td>`;
+    tableBody.appendChild(tr);
+  });
+
+  updateSummary();
+}
+
+function updateRow(td, rowIndex) {
+  const hq = hqSelect.value;
+  const link = linkSelect.value;
+  const colIndex = parseInt(td.dataset.col);
+  const newValue = td.textContent.trim();
+
+  if (!crewLinkData[hq] || !crewLinkData[hq][link]) return;
+
+  // Validate KM column
+  if (colIndex === 9 && (isNaN(newValue) || newValue === "")) {
+    alert("Please enter a valid number for KM.");
+    td.textContent = crewLinkData[hq][link][rowIndex][colIndex]; // restore original
+    return;
+  }
+
+  // Save new value
+  crewLinkData[hq][link][rowIndex][colIndex] = newValue;
+
+  // Recalculate if column affects time/KM/rest
+  const recalcCols = [3, 4, 5, 6, 9, 12]; // dep, arr, sign on/off, km, day
+  if (recalcCols.includes(colIndex)) {
+    recalculateRow(rowIndex);        // Update logic
+    updateRowDisplay(rowIndex);      // Update visible row
+  }
+
+  saveToLocalStorage(hq, link);
+}
+
+
+
+
+
+function updateRowDisplay(rowIndex) {
+  const hq = hqSelect.value;
+  const link = linkSelect.value;
+  const data = crewLinkData[hq][link][rowIndex];
+  const row = document.querySelectorAll("#tableBody tr")[rowIndex];
+
+  const fieldsToUpdate = {
+    5: data[5],  // Sign On
+    6: data[6],  // Sign Off
+    7: data[7],  // Duty
+    8: data[8],  // Night
+    9: data[9],  // KM
+    10: data[10], // HQ Rest
+    11: data[11]  // OS Rest
+  };
+
+  for (const [colIdx, val] of Object.entries(fieldsToUpdate)) {
+    const cell = row.cells[parseInt(colIdx) + 1]; // +1 because first cell is SL#
+    if (cell) cell.textContent = val;
+  }
+
+  updateSummary(); // Refresh footer summary
+}
+
+
+
+function recalculateRow(idx) {
+  const hq = hqSelect.value;
+  const link = linkSelect.value;
+  const data = crewLinkData[hq][link];
+  if (!data || !data[idx]) return;
+
+  const row = data[idx];
+
+  const train = row[0];
+  const from = row[1];
+  const to = row[2];
+  const dep = row[3];
+  const arr = row[4];
+  const manualSignOn = row[5];
+  const manualSignOff = row[6];
+  const day = row[12];
+
+  // Sign On
+  let signOnMin;
+  if (manualSignOn && /^\d{1,2}:\d{2}$/.test(manualSignOn)) {
+    signOnMin = parseTime(manualSignOn);
+  } else {
+    signOnMin = parseTime(dep) - 30;
+    if (signOnMin < 0) signOnMin += 1440;
+    row[5] = formatTime(signOnMin);
+  }
+
+  // Sign Off
+  let signOffMin;
+  if (manualSignOff && /^\d{1,2}:\d{2}$/.test(manualSignOff)) {
+    signOffMin = parseTime(manualSignOff);
+  } else {
+    signOffMin = parseTime(arr) + 30;
+    if (signOffMin >= 1440) signOffMin -= 1440;
+    row[6] = formatTime(signOffMin);
+  }
+
+  // Duty Time
+  let dutyMin = signOffMin - signOnMin;
+  if (dutyMin < 0) dutyMin += 1440;
+  row[7] = formatTime(dutyMin);
+
+  // Night Hours
+  row[8] = formatTime(calcNightHours(signOnMin, signOnMin + dutyMin));
+
+  // KM
+  if (!row[9] || row[9] === '--') {
+  row[9] = kmMap[`${from}-${to}`] || '--';
+}
+
+
+  // Rest
+  let hqRest = '--', osRest = '--';
+  if (idx > 0) {
+    const prev = data[idx - 1];
+    const prevDepDay = prev[12];
+    const prevDepTime = prev[3];
+    const prevSignOff = prev[6];
+    const prevTo = prev[2];
+
+    const actualPrevSignOffDay = adjustSignOffDay(prevDepDay, prevDepTime, prevSignOff);
+    const restMin = getRestMinutes(actualPrevSignOffDay, prevSignOff, day, row[5]);
+
+    if (prevTo === hq && from === hq) hqRest = formatTime(restMin);
+    else osRest = formatTime(restMin);
+  }
+
+  row[10] = hqRest;
+  row[11] = osRest;
+}
+
+
+function updateSummary() {
+  const hq = hqSelect.value;
+  const link = linkSelect.value;
+  const data = crewLinkData[hq]?.[link] || [];
+
+  let totalDutyMin = 0, totalNightMin = 0, totalKm = 0;
+
+  for (const row of data) {
+    const dutyParts = row[7].split(':').map(Number);
+    const nightParts = row[8].split(':').map(Number);
+    const kmVal = parseInt(row[9]);
+
+    if (dutyParts.length === 2) totalDutyMin += dutyParts[0] * 60 + dutyParts[1];
+    if (nightParts.length === 2) totalNightMin += nightParts[0] * 60 + nightParts[1];
+    if (!isNaN(kmVal)) totalKm += kmVal;
+  }
+
+  const men = crewLinkMen?.[hq]?.[link] || 1;
+  const totalDays = 7 * men;
+
+  const avgDuty = Math.round(totalDutyMin / totalDays);
+  const avgNight = Math.round(totalNightMin / totalDays);
+  const avgKm = Math.round(totalKm / totalDays);
+
+  avgDutyEl.textContent = formatTime(avgDuty);
+  avgNightEl.textContent = formatTime(avgNight);
+  avgKmEl.textContent = avgKm;
+
+  fortnightDuty.textContent = formatTime(avgDuty * 14);
+  fortnightNight.textContent = formatTime(avgNight * 14);
+  fortnightKm.textContent = avgKm * 14;
+
+  monthDuty.textContent = formatTime(avgDuty * 30);
+  monthNight.textContent = formatTime(avgNight * 30);
+  monthKm.textContent = avgKm * 30;
+
+  totalDuty.textContent = formatTime(totalDutyMin);
+  totalNight.textContent = formatTime(totalNightMin);
+  totalKmEl.textContent = totalKm;
+
+}
+
+
+function saveToLocalStorage(hq, link) {
+  localStorage.setItem(`crewData-${hq}-${link}`, JSON.stringify(crewLinkData[hq][link]));
+}
+
+function deleteRow(index) {
+  const hq = hqSelect.value;
+  const link = linkSelect.value;
+  crewLinkData[hq][link].splice(index, 1);
+  saveToLocalStorage(hq, link);
+  loadCrewLinkData(hq, link);
+}
+
+hqSelect.addEventListener("change", () => {
+  const hq = hqSelect.value;
+  const links = crewLinksByHQ[hq] || [];
+  linkSelect.innerHTML = '<option value="">Select Link</option>';
+  links.forEach(link => {
+    const opt = document.createElement("option");
+    opt.value = link;
+    opt.textContent = link;
+    linkSelect.appendChild(opt);
+  });
+  tableBody.innerHTML = "";
+  pdfTitle.textContent = `-- ${hq} Summary --`;
+});
+
+linkSelect.addEventListener("change", () => {
+  const hq = hqSelect.value;
+  const link = linkSelect.value;
+  if (!hq || !link) return;
+  pdfTitle.textContent = `${hq} ${link} - Summary`;
+  loadCrewLinkData(hq, link);
+});
+
+function exportPDF() {
+  const element = document.getElementById("pdfArea");
+
+  const hq = document.getElementById("hqSelect").value || "HQ";
+  const link = document.getElementById("linkSelect").value || "Link";
+  const titleText = `${hq} ${link} - Summary`;
+
+  // Set title only for first page
+  document.getElementById("pdfTitle").textContent = titleText;
+
+  // Temporarily hide buttons, delete icons, etc.
+  const toHide = document.querySelectorAll(".no-print, .no-export");
+  toHide.forEach(el => {
+    el.dataset.originalDisplay = el.style.display;
+    el.style.display = "none";
+  });
+
+  // Apply table header style
+  const style = document.createElement("style");
+  style.textContent = `
+    thead { display: table-header-group; }
+    tfoot { display: table-footer-group; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th {
+      padding: 6px;
+      border: 1px solid #ccc;
+      text-align: center;
+    }
+    tbody tr:nth-child(even) {
+      background-color: #f0f0f0;
+    }
+    h1#pdfTitle {
+      text-align: center;
+      font-size: 16px;
+      margin-bottom: 10px;
+    }
+  `;
+  document.head.appendChild(style);
+
+  // Export PDF
+  html2pdf()
+    .set({
+      margin: [10, 8, 10, 8], // top, left, bottom, right
+      filename: `${titleText}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, scrollY: 0 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    })
+    .from(element)
+    .toPdf()
+    .get('pdf')
+    .then(pdf => {
+      const totalPages = pdf.internal.getNumberOfPages();
+      for (let i = 2; i <= totalPages; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(10);
+        pdf.setTextColor(100);
+        pdf.text(`${titleText} — Page ${i}`, pdf.internal.pageSize.getWidth() / 2, pdf.internal.pageSize.getHeight() - 8, { align: 'center' });
+      }
+    })
+    .save()
+    .then(() => {
+      // Restore hidden elements
+      toHide.forEach(el => {
+        el.style.display = el.dataset.originalDisplay || "";
+      });
+      document.head.removeChild(style);
+    });
+}
+
+
+function exportExcel() {
+  const table = document.getElementById("dutyTable");
+  const clone = table.cloneNode(true);
+
+  // Remove buttons or extra columns
+  Array.from(clone.querySelectorAll("tr")).forEach(row => {
+    [...row.cells].forEach((cell, i) => {
+      if (cell.classList.contains("no-print") || cell.classList.contains("no-export")) {
+        row.deleteCell(i);
+      }
+    });
+  });
+
+  // Extract HQ and Link
+  const hq = document.getElementById("hqSelect").value || "HQ";
+  const link = document.getElementById("linkSelect").value || "Link";
+  const titleText = `${hq} ${link} - Summary`;
+
+  // Add title row above table
+  const fullTable = document.createElement("table");
+  const headingRow = fullTable.insertRow();
+  const headingCell = headingRow.insertCell();
+  headingCell.colSpan = clone.rows[0].cells.length;
+  headingCell.textContent = titleText;
+  headingCell.style.fontWeight = "bold";
+  headingCell.style.fontSize = "16px";
+  headingCell.style.textAlign = "center";
+  headingCell.style.padding = "10px";
+
+  fullTable.appendChild(clone.tHead.cloneNode(true));
+  fullTable.appendChild(clone.tBodies[0].cloneNode(true));
+  if (clone.tFoot) fullTable.appendChild(clone.tFoot.cloneNode(true));
+
+  // Export using SheetJS
+  const wb = XLSX.utils.table_to_book(fullTable, { sheet: "Summary" });
+  XLSX.writeFile(wb, `${titleText}.xlsx`);
+}
+
+
+
+document.addEventListener("DOMContentLoaded", () => {
+  window.hqSelect = document.getElementById("hqSelect");
+  window.linkSelect = document.getElementById("linkSelect");
+  window.trainNo = document.getElementById("trainNo");
+  window.fromStation = document.getElementById("fromStation");
+  window.toStation = document.getElementById("toStation");
+  window.dutyDay = document.getElementById("dutyDay");
+  window.tableBody = document.getElementById("tableBody");
+  window.pdfTitle = document.getElementById("pdfTitle");
+  window.avgDutyEl = document.getElementById("avgDuty");
+  window.avgNightEl = document.getElementById("avgNight");
+  window.avgKmEl = document.getElementById("avgKm");
+  window.fortnightDuty = document.getElementById("fortnightDuty");
+  window.fortnightNight = document.getElementById("fortnightNight");
+  window.fortnightKm = document.getElementById("fortnightKm");
+  window.monthDuty = document.getElementById("monthDuty");
+  window.monthNight = document.getElementById("monthNight");
+  window.monthKm = document.getElementById("monthKm");
+  window.totalDuty = document.getElementById("totalDuty");
+  window.totalNight = document.getElementById("totalNight");
+  window.totalKm = document.getElementById("totalKm");
+  window.totalKmEl = document.getElementById("totalKm");
+
+
+  populateStationDropdowns();
+  hqSelect.dispatchEvent(new Event("change"));
+});
+
+</script>
+
+</body>
+</html>
