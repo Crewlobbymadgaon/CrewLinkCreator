@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Edit Train Timings</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 p-6 text-sm">
+
+  <div class="max-w-4xl mx-auto bg-white rounded shadow p-6">
+    <h1 class="text-xl font-bold mb-4">🚆 Train Timings Editor</h1>
+
+    <input type="file" accept=".js" id="fileInput" class="mb-4" />
+    
+    <div class="mb-4 flex gap-4">
+      <input id="routeKey" placeholder="e.g., MAO-RN" class="border p-2 rounded w-1/3" />
+      <input id="trainNo" placeholder="Train No" class="border p-2 rounded w-1/3" />
+      <input id="depTime" placeholder="Departure (HH:MM)" class="border p-2 rounded w-1/6" />
+      <input id="arrTime" placeholder="Arrival (HH:MM)" class="border p-2 rounded w-1/6" />
+      <button onclick="addTrain()" class="bg-blue-600 text-white px-4 py-2 rounded">➕ Add</button>
+    </div>
+
+    <div class="max-h-[400px] overflow-y-auto border rounded">
+      <table class="min-w-full text-left" id="timingsTable">
+        <thead class="bg-gray-200 sticky top-0">
+          <tr>
+            <th class="p-2">Route</th>
+            <th class="p-2">Train</th>
+            <th class="p-2">Departure</th>
+            <th class="p-2">Arrival</th>
+            <th class="p-2">Action</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+
+    <button onclick="downloadJS()" class="mt-6 bg-green-600 text-white px-6 py-2 rounded">⬇️ Download train_timings.js</button>
+  </div>
+
+<script>
+  let trainTimings = {};
+
+  document.getElementById("fileInput").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    const text = await file.text();
+    const jsonText = text.replace(/^.*?=\s*/, '').replace(/;?\s*$/, '');
+    trainTimings = JSON.parse(jsonText);
+    renderTable();
+  });
+
+  function renderTable() {
+    const tbody = document.getElementById("tableBody");
+    tbody.innerHTML = "";
+
+    Object.entries(trainTimings).forEach(([route, trains]) => {
+      trains.forEach((entry, i) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="p-2">${route}</td>
+          <td class="p-2">${entry.train}</td>
+          <td class="p-2">${entry.dep}</td>
+          <td class="p-2">${entry.arr}</td>
+          <td class="p-2 text-red-600 cursor-pointer" onclick="deleteTrain('${route}', ${i})">🗑️ Delete</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    });
+  }
+
+  function addTrain() {
+    const route = document.getElementById("routeKey").value.trim();
+    const train = document.getElementById("trainNo").value.trim();
+    const dep = document.getElementById("depTime").value.trim();
+    const arr = document.getElementById("arrTime").value.trim();
+
+    if (!route || !train || !dep || !arr) return alert("Fill all fields");
+
+    if (!trainTimings[route]) trainTimings[route] = [];
+    trainTimings[route].push({ train, dep, arr });
+
+    renderTable();
+
+    document.getElementById("trainNo").value = "";
+    document.getElementById("depTime").value = "";
+    document.getElementById("arrTime").value = "";
+  }
+
+  function deleteTrain(route, index) {
+    if (confirm(`Delete train from ${route}?`)) {
+      trainTimings[route].splice(index, 1);
+      if (trainTimings[route].length === 0) delete trainTimings[route];
+      renderTable();
+    }
+  }
+
+  function downloadJS() {
+    const blob = new Blob(
+      [`const trainTimings = ${JSON.stringify(trainTimings, null, 2)};`],
+      { type: "text/javascript" }
+    );
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "train_timings.js";
+    link.click();
+  }
+</script>
+</body>
+</html>
