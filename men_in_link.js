@@ -1,9 +1,9 @@
 const crewLinkMen = {
   MAO: {
-    "Link 1": 10,
+    "Link 1": 20,
     "Link 2": 15,
-    "Link 3": 10,
-    "Link 4": 17
+    "Link 3": 13,
+    "Link 4": 11
   },
   RN: {
     "Link 1": 14,
