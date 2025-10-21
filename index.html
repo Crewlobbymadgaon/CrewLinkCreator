@@ -688,6 +688,132 @@ function exportPDF() {
         // Footer centered page number
         pdf.text(
           `${titleText} — Page ${i} of ${totalPages}`,
+function exportPDF() {
+  const element = document.getElementById("pdfArea");
+  if (!element) return alert("pdfArea not found");
+
+  const hq = document.getElementById("hqSelect").value || "HQ";
+  const link = document.getElementById("linkSelect").value || "Link";
+  const titleText = `${hq} ${link} - Summary`;
+
+  // Update title shown in the export area
+  const pdfTitleEl = document.getElementById("pdfTitle");
+  if (pdfTitleEl) pdfTitleEl.textContent = titleText;
+
+  // Hide non-print elements (buttons / delete icons)
+  const toHide = document.querySelectorAll(".no-print, .no-export");
+  toHide.forEach(el => {
+    el.dataset.originalDisplay = el.style.display;
+    el.style.display = "none";
+  });
+
+  // Build summary numbers from current data
+  const data = (window.crewLinkData?.[hq]?.[link]) || [];
+  let totalDutyMin = 0, totalNightMin = 0, totalKm = 0;
+  data.forEach(row => {
+    const duty = (row[7] || "--").toString();
+    const night = (row[8] || "--").toString();
+    const kmVal = parseInt(row[9]);
+    if (/^\d{1,2}:\d{2}$/.test(duty)) {
+      const [dh, dm] = duty.split(":").map(Number);
+      totalDutyMin += dh*60 + dm;
+    }
+    if (/^\d{1,2}:\d{2}$/.test(night)) {
+      const [nh, nm] = night.split(":").map(Number);
+      totalNightMin += nh*60 + nm;
+    }
+    if (!isNaN(kmVal)) totalKm += kmVal;
+  });
+
+  const men = (typeof crewLinkMen !== 'undefined' && crewLinkMen?.[hq]?.[link]) ? crewLinkMen[hq][link] : 1;
+  const totalDays = Math.max(1, 7 * men);
+
+  const avgDutyPerDay = Math.round(totalDutyMin / totalDays);
+  const avgNightPerDay = Math.round(totalNightMin / totalDays);
+  const avgKmPerDay = Math.round(totalKm / totalDays);
+
+  const fortnightDutyMin = Math.round(avgDutyPerDay * 14);
+  const fortnightNightMin = Math.round(avgNightPerDay * 14);
+  const monthKm = Math.round(avgKmPerDay * 30);
+
+  const fmt = (mins) => {
+    if (isNaN(mins)) return "--";
+    const h = Math.floor(mins / 60).toString().padStart(2,'0');
+    const m = (mins % 60).toString().padStart(2,'0');
+    return `${h}:${m}`;
+  };
+
+  // create summary block (force page break before it)
+  const summaryWrapper = document.createElement('div');
+  summaryWrapper.id = 'pdfSummaryWrapper';
+  summaryWrapper.style.pageBreakBefore = 'always';
+  summaryWrapper.style.marginTop = '6mm';
+  summaryWrapper.innerHTML = `
+    <h2 style="text-align:center; font-size:13px; margin:6px 0;">Summary</h2>
+    <table style="width:100%; border-collapse:collapse; font-size:11px;">
+      <thead>
+        <tr>
+          <th style="border:1px solid #ccc; padding:6px;">Link</th>
+          <th style="border:1px solid #ccc; padding:6px;">Men</th>
+          <th style="border:1px solid #ccc; padding:6px;">Total Duty Hrs</th>
+          <th style="border:1px solid #ccc; padding:6px;">Total Night Hrs</th>
+          <th style="border:1px solid #ccc; padding:6px;">Total KM</th>
+          <th style="border:1px solid #ccc; padding:6px;">Fortnight Duty Hrs</th>
+          <th style="border:1px solid #ccc; padding:6px;">Fortnight Night Hrs</th>
+          <th style="border:1px solid #ccc; padding:6px;">Month KM</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="border:1px solid #ccc; padding:6px; text-align:center;">${link}</td>
+          <td style="border:1px solid #ccc; padding:6px; text-align:center;">${men}</td>
+          <td style="border:1px solid #ccc; padding:6px; text-align:center;">${fmt(totalDutyMin)}</td>
+          <td style="border:1px solid #ccc; padding:6px; text-align:center;">${fmt(totalNightMin)}</td>
+          <td style="border:1px solid #ccc; padding:6px; text-align:center;">${totalKm}</td>
+          <td style="border:1px solid #ccc; padding:6px; text-align:center;">${fmt(fortnightDutyMin)}</td>
+          <td style="border:1px solid #ccc; padding:6px; text-align:center;">${fmt(fortnightNightMin)}</td>
+          <td style="border:1px solid #ccc; padding:6px; text-align:center;">${monthKm}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+  element.appendChild(summaryWrapper);
+
+  // temporary style for PDF-friendly layout
+  const style = document.createElement("style");
+  style.id = 'pdfTempStyle';
+  style.textContent = `
+    @page { size: A4 portrait; margin: 12mm; }
+    table { width:100%; border-collapse:collapse; font-size:10px; }
+    th, td { border:1px solid #ccc; padding:5px; text-align:center; }
+    thead { display: table-header-group; }
+    tbody tr:nth-child(even) { background-color: #f8f9fa; }
+    #pdfSummaryWrapper table { page-break-inside: avoid; }
+    h1#pdfTitle { text-align:center; font-size:14px; margin-bottom:6px; font-weight:bold; }
+  `;
+  document.head.appendChild(style);
+
+  // Generate PDF
+  html2pdf()
+    .set({
+      margin: [12, 10, 14, 10], // mm
+      filename: `${titleText}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, scrollY: 0 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'] }
+    })
+    .from(element)
+    .toPdf()
+    .get('pdf')
+    .then(pdf => {
+      const totalPages = pdf.internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(9);
+        pdf.setTextColor(100);
+        pdf.text(
+          `${titleText} — Page ${i} of ${totalPages}`,
           pdf.internal.pageSize.getWidth() / 2,
           pdf.internal.pageSize.getHeight() - 8,
           { align: 'center' }
@@ -696,24 +822,22 @@ function exportPDF() {
     })
     .save()
     .then(() => {
-      // cleanup: remove summary element, restore hidden elements & style
+      // cleanup
       const summary = document.getElementById('pdfSummaryWrapper');
       if (summary) summary.remove();
-      toHide.forEach(el => {
-        el.style.display = el.dataset.originalDisplay || "";
-      });
-      if (style.parentNode) document.head.removeChild(style);
+      toHide.forEach(el => el.style.display = el.dataset.originalDisplay || "");
+      const s = document.getElementById('pdfTempStyle');
+      if (s && s.parentNode) s.parentNode.removeChild(s);
     })
     .catch(err => {
-      // ensure cleanup on error as well
+      // ensure cleanup on error
       const summary = document.getElementById('pdfSummaryWrapper');
       if (summary) summary.remove();
-      toHide.forEach(el => {
-        el.style.display = el.dataset.originalDisplay || "";
-      });
-      if (style.parentNode) document.head.removeChild(style);
+      toHide.forEach(el => el.style.display = el.dataset.originalDisplay || "");
+      const s = document.getElementById('pdfTempStyle');
+      if (s && s.parentNode) s.parentNode.removeChild(s);
       console.error("PDF export failed:", err);
-      alert("PDF export failed. Check console for details.");
+      alert("PDF export failed. See console for details.");
     });
 }
 
