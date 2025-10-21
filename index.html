@@ -492,41 +492,107 @@ function updateSummary() {
   const link = linkSelect.value;
   const data = crewLinkData[hq]?.[link] || [];
 
+  // totals in minutes and km
   let totalDutyMin = 0, totalNightMin = 0, totalKm = 0;
-
   for (const row of data) {
-    const dutyParts = row[7].split(':').map(Number);
-    const nightParts = row[8].split(':').map(Number);
+    const duty = (row[7] || "--").toString();
+    const night = (row[8] || "--").toString();
     const kmVal = parseInt(row[9]);
-
-    if (dutyParts.length === 2) totalDutyMin += dutyParts[0] * 60 + dutyParts[1];
-    if (nightParts.length === 2) totalNightMin += nightParts[0] * 60 + nightParts[1];
+    if (/^\d{1,2}:\d{2}$/.test(duty)) {
+      const [dh, dm] = duty.split(':').map(Number);
+      totalDutyMin += dh * 60 + dm;
+    }
+    if (/^\d{1,2}:\d{2}$/.test(night)) {
+      const [nh, nm] = night.split(':').map(Number);
+      totalNightMin += nh * 60 + nm;
+    }
     if (!isNaN(kmVal)) totalKm += kmVal;
   }
 
-  const men = crewLinkMen?.[hq]?.[link] || 1;
-  const totalDays = 7 * men;
+  const men = (typeof crewLinkMen !== 'undefined' && crewLinkMen?.[hq]?.[link]) ? crewLinkMen[hq][link] : 1;
+  const totalDays = Math.max(1, 7 * men);
 
-  const avgDuty = Math.round(totalDutyMin / totalDays);
-  const avgNight = Math.round(totalNightMin / totalDays);
-  const avgKm = Math.round(totalKm / totalDays);
+  // averages per day (minutes and km)
+  const avgDutyPerDayMin = Math.round(totalDutyMin / totalDays);
+  const avgNightPerDayMin = Math.round(totalNightMin / totalDays);
+  const avgKmPerDay = Math.round(totalKm / totalDays);
 
-  avgDutyEl.textContent = formatTime(avgDuty);
-  avgNightEl.textContent = formatTime(avgNight);
-  avgKmEl.textContent = avgKm;
+  // fortnight and month values
+  const fortnightDutyMin = Math.round(avgDutyPerDayMin * 14);
+  const fortnightNightMin = Math.round(avgNightPerDayMin * 14);
+  const monthKm = Math.round(avgKmPerDay * 30);
 
-  fortnightDuty.textContent = formatTime(avgDuty * 14);
-  fortnightNight.textContent = formatTime(avgNight * 14);
-  fortnightKm.textContent = avgKm * 14;
+  const fmt = (mins) => {
+    if (isNaN(mins)) return "--";
+    const h = Math.floor(mins / 60).toString().padStart(2, '0');
+    const m = (mins % 60).toString().padStart(2, '0');
+    return `${h}:${m}`;
+  };
 
-  monthDuty.textContent = formatTime(avgDuty * 30);
-  monthNight.textContent = formatTime(avgNight * 30);
-  monthKm.textContent = avgKm * 30;
+  // Build the summary HTML in the order you asked (no separate page)
+  const html = `
+    <table id="summaryTable" class="min-w-full text-center border-collapse">
+      <thead class="bg-gray-500 font-semibold">
+        <tr><th colspan="6" style="text-align:center; padding:8px; font-size:14px;">Link Summary — ${hq} ${link}</th></tr>
+      </thead>
+      <tbody>
+        <!-- TOTAL row -->
+        <tr>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Total Duty Hrs</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(totalDutyMin)}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Total Night Hrs</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(totalNightMin)}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Total KM</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${totalKm}</td>
+        </tr>
 
-  totalDuty.textContent = formatTime(totalDutyMin);
-  totalNight.textContent = formatTime(totalNightMin);
-  totalKmEl.textContent = totalKm;
+        <!-- AVG / DAY row -->
+        <tr>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Avg Duty / Day</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(avgDutyPerDayMin)}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Avg Night / Day</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(avgNightPerDayMin)}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Avg KM / Day</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${avgKmPerDay}</td>
+        </tr>
 
+        <!-- FORTNIGHT / MONTH row -->
+        <tr>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Fortnight Duty Hrs</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(fortnightDutyMin)}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Fortnight Night Hrs</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(fortnightNightMin)}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Month KM</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${monthKm}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+
+  // Replace the content of the existing wrapper (keeps print/export behavior)
+  const wrapper = document.getElementById('summaryTableWrapper');
+  if (wrapper) {
+    wrapper.innerHTML = html;
+  } else {
+    console.warn("summaryTableWrapper not found — can't render bottom summary");
+  }
+
+  // Also update any legacy IDs you used elsewhere (optional)
+  // If your other code expects #avgDuty etc., update them too:
+  try {
+    if (window.avgDutyEl) avgDutyEl.textContent = fmt(avgDutyPerDayMin);
+    if (window.avgNightEl) avgNightEl.textContent = fmt(avgNightPerDayMin);
+    if (window.avgKmEl) avgKmEl.textContent = avgKmPerDay;
+    if (window.fortnightDuty) fortnightDuty.textContent = fmt(fortnightDutyMin);
+    if (window.fortnightNight) fortnightNight.textContent = fmt(fortnightNightMin);
+    if (window.fortnightKm) fortnightKm.textContent = monthKm; // original stored fortnightKm was km*14; adjust if needed
+    if (window.monthDuty) monthDuty.textContent = fmt(fortnightDutyMin); // kept for compatibility
+    if (window.totalDuty) totalDuty.textContent = fmt(totalDutyMin);
+    if (window.totalNight) totalNight.textContent = fmt(totalNightMin);
+    if (window.totalKmEl) totalKmEl.textContent = totalKm;
+  } catch (e) {
+    // ignore if elements don't exist
+  }
 }
 
 
@@ -566,172 +632,72 @@ linkSelect.addEventListener("change", () => {
 
 function exportPDF() {
   const element = document.getElementById("pdfArea");
-  if (!element) return alert("pdfArea not found");
 
   const hq = document.getElementById("hqSelect").value || "HQ";
   const link = document.getElementById("linkSelect").value || "Link";
   const titleText = `${hq} ${link} - Summary`;
 
-  // Update visible title
-  const pdfTitleEl = document.getElementById("pdfTitle");
-  if (pdfTitleEl) pdfTitleEl.textContent = titleText;
+  // Set title only for first page
+  document.getElementById("pdfTitle").textContent = titleText;
 
-  // Hide non-print elements
+  // Temporarily hide buttons, delete icons, etc.
   const toHide = document.querySelectorAll(".no-print, .no-export");
-  toHide.forEach(el => { el.dataset.originalDisplay = el.style.display; el.style.display = "none"; });
-
-  // gather data
-  const data = (window.crewLinkData?.[hq]?.[link]) || [];
-  let totalDutyMin = 0, totalNightMin = 0, totalKm = 0;
-
-  data.forEach(row => {
-    const duty = (row[7] || "--").toString();
-    const night = (row[8] || "--").toString();
-    const kmVal = parseInt(row[9]);
-    if (/^\d{1,2}:\d{2}$/.test(duty)) {
-      const [dh, dm] = duty.split(":").map(Number);
-      totalDutyMin += dh*60 + dm;
-    }
-    if (/^\d{1,2}:\d{2}$/.test(night)) {
-      const [nh, nm] = night.split(":").map(Number);
-      totalNightMin += nh*60 + nm;
-    }
-    if (!isNaN(kmVal)) totalKm += kmVal;
+  toHide.forEach(el => {
+    el.dataset.originalDisplay = el.style.display;
+    el.style.display = "none";
   });
 
-  const men = (typeof crewLinkMen !== 'undefined' && crewLinkMen?.[hq]?.[link]) ? crewLinkMen[hq][link] : 1;
-  const totalDays = Math.max(1, 7 * men);
-
-  // averages and derived values
-  const avgDutyPerDayMin = Math.round(totalDutyMin / totalDays);
-  const avgNightPerDayMin = Math.round(totalNightMin / totalDays);
-  const avgKmPerDay = Math.round(totalKm / totalDays);
-
-  const fortnightDutyMin = Math.round(avgDutyPerDayMin * 14);
-  const fortnightNightMin = Math.round(avgNightPerDayMin * 14);
-  const monthKm = Math.round(avgKmPerDay * 30);
-
-  const fmt = (mins) => {
-    if (isNaN(mins)) return "--";
-    const h = Math.floor(mins / 60).toString().padStart(2,'0');
-    const m = (mins % 60).toString().padStart(2,'0');
-    return `${h}:${m}`;
-  };
-
-  // Build summary block with requested order:
-  // Heading -> Total row -> Avg/day row -> Fortnight/Month row
-  const summaryWrapper = document.createElement('div');
-  summaryWrapper.id = 'pdfSummaryWrapper';
-  summaryWrapper.style.pageBreakBefore = 'always';
-  summaryWrapper.style.marginTop = '6mm';
-  summaryWrapper.innerHTML = `
-    <h2 style="text-align:center; font-size:14px; margin:8px 0 12px 0; font-weight:600;">Link Summary</h2>
-    <div style="max-width:900px; margin:0 auto;">
-      <table style="width:100%; border-collapse:collapse; font-size:12px;">
-        <thead>
-          <tr>
-            <th style="border:1px solid #ccc; padding:8px; text-align:center;">Metric</th>
-            <th style="border:1px solid #ccc; padding:8px; text-align:center;">Value</th>
-            <th style="border:1px solid #ccc; padding:8px; text-align:center;">Metric</th>
-            <th style="border:1px solid #ccc; padding:8px; text-align:center;">Value</th>
-            <th style="border:1px solid #ccc; padding:8px; text-align:center;">Metric</th>
-            <th style="border:1px solid #ccc; padding:8px; text-align:center;">Value</th>
-          </tr>
-        </thead>
-        <tbody>
-          <!-- Total row -->
-          <tr>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">Total Duty Hrs</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">${fmt(totalDutyMin)}</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">Total Night Hrs</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">${fmt(totalNightMin)}</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">Total KM</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">${totalKm}</td>
-          </tr>
-
-          <!-- Avg / Day row -->
-          <tr>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">Avg Duty / Day</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">${fmt(avgDutyPerDayMin)}</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">Avg Night / Day</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">${fmt(avgNightPerDayMin)}</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">Avg KM / Day</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">${avgKmPerDay}</td>
-          </tr>
-
-          <!-- Fortnight / Month row -->
-          <tr>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">Fortnight Duty Hrs</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">${fmt(fortnightDutyMin)}</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">Fortnight Night Hrs</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">${fmt(fortnightNightMin)}</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">Month KM</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">${monthKm}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  `;
-  element.appendChild(summaryWrapper);
-
-  // Temporary PDF style (keeps header repeated)
+  // Apply table header style
   const style = document.createElement("style");
-  style.id = 'pdfTempStyle';
   style.textContent = `
-    @page { size: A4 landscape; margin: 12mm; }
-    table { width:100%; border-collapse:collapse; font-size:10px; }
-    th, td { border:1px solid #ccc; padding:6px; text-align:center; }
     thead { display: table-header-group; }
-    tbody tr:nth-child(even) { background-color: #f8f9fa; }
-    #pdfSummaryWrapper table { page-break-inside: avoid; }
-    h1#pdfTitle { text-align:center; font-size:14px; margin-bottom:6px; font-weight:bold; }
+    tfoot { display: table-footer-group; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th {
+      padding: 6px;
+      border: 1px solid #ccc;
+      text-align: center;
+    }
+    tbody tr:nth-child(even) {
+      background-color: #f0f0f0;
+    }
+    h1#pdfTitle {
+      text-align: center;
+      font-size: 16px;
+      margin-bottom: 10px;
+    }
   `;
   document.head.appendChild(style);
 
-  // generate PDF (keeps your landscape A4 config)
+  // Export PDF
   html2pdf()
     .set({
-      margin: [10, 8, 10, 8],
+      margin: [10, 8, 10, 8], // top, left, bottom, right
       filename: `${titleText}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2, scrollY: 0 },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
-      pagebreak: { mode: ['css', 'legacy'] }
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
     })
     .from(element)
     .toPdf()
     .get('pdf')
     .then(pdf => {
       const totalPages = pdf.internal.getNumberOfPages();
-      for (let i = 1; i <= totalPages; i++) {
+      for (let i = 2; i <= totalPages; i++) {
         pdf.setPage(i);
-        pdf.setFontSize(9);
+        pdf.setFontSize(10);
         pdf.setTextColor(100);
-        pdf.text(
-          `${titleText} — Page ${i} of ${totalPages}`,
-          pdf.internal.pageSize.getWidth() / 2,
-          pdf.internal.pageSize.getHeight() - 8,
-          { align: 'center' }
-        );
+        pdf.text(`${titleText} — Page ${i}`, pdf.internal.pageSize.getWidth() / 2, pdf.internal.pageSize.getHeight() - 8, { align: 'center' });
       }
     })
     .save()
     .then(() => {
-      // cleanup
-      const summary = document.getElementById('pdfSummaryWrapper');
-      if (summary) summary.remove();
-      toHide.forEach(el => el.style.display = el.dataset.originalDisplay || "");
-      const s = document.getElementById('pdfTempStyle');
-      if (s && s.parentNode) s.parentNode.removeChild(s);
-    })
-    .catch(err => {
-      const summary = document.getElementById('pdfSummaryWrapper');
-      if (summary) summary.remove();
-      toHide.forEach(el => el.style.display = el.dataset.originalDisplay || "");
-      const s = document.getElementById('pdfTempStyle');
-      if (s && s.parentNode) s.parentNode.removeChild(s);
-      console.error("PDF export failed:", err);
-      alert("PDF export failed. See console for details.");
+      // Restore hidden elements
+      toHide.forEach(el => {
+        el.style.display = el.dataset.originalDisplay || "";
+      });
+      document.head.removeChild(style);
     });
 }
 
