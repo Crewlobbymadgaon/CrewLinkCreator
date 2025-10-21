@@ -487,10 +487,9 @@ function recalculateRow(idx) {
 
 
 
-// ---- Single robust updateSummary() - copy this and replace ALL other updateSummary definitions ----
 function updateSummary() {
   try {
-    // safe references
+    // safe element refs
     const hq = (window.hqSelect && hqSelect.value) || (document.getElementById('hqSelect')?.value) || 'HQ';
     const link = (window.linkSelect && linkSelect.value) || (document.getElementById('linkSelect')?.value) || 'Link';
     const data = (window.crewLinkData && crewLinkData[hq] && crewLinkData[hq][link]) ? crewLinkData[hq][link] : [];
@@ -512,7 +511,7 @@ function updateSummary() {
       if (!isNaN(kmVal)) totalKm += kmVal;
     }
 
-    // men / days
+    // men/days calculation
     const men = (typeof crewLinkMen !== 'undefined' && crewLinkMen?.[hq]?.[link]) ? crewLinkMen[hq][link] : 1;
     const totalDays = Math.max(1, 7 * men);
 
@@ -531,8 +530,11 @@ function updateSummary() {
       return `${h}:${m}`;
     };
 
-    // Build summary HTML (single block)
-    const summaryHtml = `
+    // remove any old summary nodes (prevents duplicates)
+    document.querySelectorAll('#summaryTableWrapper, #summaryTable, #linkSummaryBlock').forEach(el => el.remove());
+
+    // build fresh summary HTML (KM / Month label included)
+    const html = `
       <div id="linkSummaryBlock" style="margin-top:12px;">
         <table class="min-w-full text-center border-collapse" style="width:100%; border-collapse:collapse; font-size:0.95rem;">
           <thead style="background:#f3f4f6; font-weight:600;">
@@ -568,23 +570,26 @@ function updateSummary() {
       </div>
     `;
 
-    // Ensure single wrapper below duty table (do NOT remove other DOM nodes)
-    let wrapper = document.getElementById('summaryTableWrapper');
-    if (!wrapper) {
-      wrapper = document.createElement('div');
-      wrapper.id = 'summaryTableWrapper';
-      const dutyTable = document.getElementById('dutyTable');
-      if (dutyTable && dutyTable.parentNode) {
-        dutyTable.parentNode.insertBefore(wrapper, dutyTable.nextSibling);
-      } else {
-        const pdfArea = document.getElementById('pdfArea') || document.body;
-        pdfArea.appendChild(wrapper);
-      }
-    }
-    // Set content (overwrite old content safely)
-    wrapper.innerHTML = summaryHtml;
+    // create wrapper and insert it AFTER the duty table's container,
+    // prefer the scrolling wrapper if present so summary is below the table visually
+    let wrapper = document.createElement('div');
+    wrapper.id = 'summaryTableWrapper';
+    wrapper.className = 'mt-4';
+    wrapper.innerHTML = html;
 
-    // update legacy small-summary fields only if they exist (non-throwing)
+    const dutyTable = document.getElementById('dutyTable');
+    if (dutyTable) {
+      // prefer the overflow container if present
+      const container = dutyTable.closest('.overflow-x-auto') || dutyTable;
+      // insert AFTER the container
+      container.insertAdjacentElement('afterend', wrapper);
+    } else {
+      // fallback: append to pdfArea
+      const pdfArea = document.getElementById('pdfArea') || document.body;
+      pdfArea.appendChild(wrapper);
+    }
+
+    // update legacy small-summary fields if they exist
     try {
       if (window.avgDutyEl) avgDutyEl.textContent = fmt(avgDutyPerDayMin);
       if (window.avgNightEl) avgNightEl.textContent = fmt(avgNightPerDayMin);
@@ -597,24 +602,23 @@ function updateSummary() {
       if (window.totalNight) totalNight.textContent = fmt(totalNightMin);
       if (window.totalKmEl) totalKmEl.textContent = totalKm;
     } catch (e) {
-      // ignore missing elements
+      // ignore missing legacy elements
     }
+
   } catch (err) {
-    console.error("updateSummary() failed:", err);
-    // keep app alive: show tiny inline message (non-blocking)
+    console.error('updateSummary failed:', err);
+    // show small non-blocking message
     let dbg = document.getElementById('summaryErrorDebug');
     if (!dbg) {
       dbg = document.createElement('div');
       dbg.id = 'summaryErrorDebug';
       dbg.style.color = 'red';
       dbg.style.fontSize = '12px';
-      const pdfArea = document.getElementById('pdfArea') || document.body;
-      pdfArea.appendChild(dbg);
+      (document.getElementById('pdfArea') || document.body).appendChild(dbg);
     }
-    dbg.textContent = "Summary update failed — check console.";
+    dbg.textContent = 'Summary update failed — check console.';
   }
 }
-// ---- end updateSummary() ----
 
 
 
