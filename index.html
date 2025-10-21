@@ -576,40 +576,114 @@ function updateSummary() {
   if (!wrapper) {
     wrapper = document.createElement('div');
     wrapper.id = 'summaryTableWrapper';
-    // append after dutyTable if possible, otherwise append to pdfArea
-    const dutyTable = document.getElementById('dutyTable');
-    if (dutyTable && dutyTable.parentNode) {
-      dutyTable.parentNode.insertBefore(wrapper, dutyTable.nextSibling);
-    } else {
-      const pdfArea = document.getElementById('pdfArea') || document.body;
-      pdfArea.appendChild(wrapper);
+function updateSummary() {
+  const hq = hqSelect.value;
+  const link = linkSelect.value;
+  const data = crewLinkData[hq]?.[link] || [];
+
+  // totals
+  let totalDutyMin = 0, totalNightMin = 0, totalKm = 0;
+  for (const row of data) {
+    const duty = (row[7] || "--").toString();
+    const night = (row[8] || "--").toString();
+    const kmVal = parseInt(row[9]);
+    if (/^\d{1,2}:\d{2}$/.test(duty)) {
+      const [dh, dm] = duty.split(':').map(Number);
+      totalDutyMin += dh * 60 + dm;
     }
-  } else {
-    // move wrapper to be immediately after dutyTable so summary shows below table
-    const dutyTable = document.getElementById('dutyTable');
-    if (dutyTable && dutyTable.parentNode) {
-      dutyTable.parentNode.insertBefore(wrapper, dutyTable.nextSibling);
+    if (/^\d{1,2}:\d{2}$/.test(night)) {
+      const [nh, nm] = night.split(':').map(Number);
+      totalNightMin += nh * 60 + nm;
     }
+    if (!isNaN(kmVal)) totalKm += kmVal;
   }
 
-  // Replace wrapper content with new summary (this will overwrite existing "Summary Type" area)
-  wrapper.innerHTML = html;
+  const men = (typeof crewLinkMen !== 'undefined' && crewLinkMen?.[hq]?.[link]) ? crewLinkMen[hq][link] : 1;
+  const totalDays = Math.max(1, 7 * men);
 
-  // Also update legacy IDs if present so other UI stays consistent
+  // averages and derived
+  const avgDutyPerDayMin = Math.round(totalDutyMin / totalDays);
+  const avgNightPerDayMin = Math.round(totalNightMin / totalDays);
+  const avgKmPerDay = Math.round(totalKm / totalDays);
+
+  const fortnightDutyMin = Math.round(avgDutyPerDayMin * 14);
+  const fortnightNightMin = Math.round(avgNightPerDayMin * 14);
+  const monthKm = Math.round(avgKmPerDay * 30);
+
+  const fmt = (mins) => {
+    if (isNaN(mins)) return "--";
+    const h = Math.floor(mins / 60).toString().padStart(2, '0');
+    const m = (mins % 60).toString().padStart(2, '0');
+    return `${h}:${m}`;
+  };
+
+  // Remove old summary table if still present
+  const oldSummary = document.querySelector("#summaryTableWrapper");
+  if (oldSummary) oldSummary.remove();
+
+  // Build fresh summary table
+  const wrapper = document.createElement("div");
+  wrapper.id = "summaryTableWrapper";
+  wrapper.className = "mt-6";
+
+  wrapper.innerHTML = `
+    <table class="min-w-full text-center border-collapse" style="width:100%; border-collapse:collapse; font-size:0.95rem;">
+      <thead style="background:#f3f4f6; font-weight:600;">
+        <tr>
+          <th colspan="6" style="padding:10px; text-align:center; font-size:1rem;">
+            Link Summary — ${hq} ${link}
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- TOTAL -->
+        <tr>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Total Duty Hrs</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(totalDutyMin)}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Total Night Hrs</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(totalNightMin)}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Total KM</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${totalKm}</td>
+        </tr>
+
+        <!-- AVG / DAY -->
+        <tr>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Avg Duty / Day</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(avgDutyPerDayMin)}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Avg Night / Day</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(avgNightPerDayMin)}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Avg KM / Day</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${avgKmPerDay}</td>
+        </tr>
+
+        <!-- FORTNIGHT / MONTH -->
+        <tr>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Fortnight Duty Hrs</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(fortnightDutyMin)}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Fortnight Night Hrs</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(fortnightNightMin)}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">KM / Month</td>
+          <td style="border:1px solid #e5e7eb; padding:8px;">${monthKm}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+
+  // Place summary just below duty table
+  const dutyTable = document.getElementById("dutyTable");
+  if (dutyTable && dutyTable.parentNode) {
+    dutyTable.parentNode.insertBefore(wrapper, dutyTable.nextSibling);
+  } else {
+    const pdfArea = document.getElementById("pdfArea") || document.body;
+    pdfArea.appendChild(wrapper);
+  }
+
+  // Also update references for backward compatibility
   try {
-    if (window.avgDutyEl) avgDutyEl.textContent = fmt(avgDutyPerDayMin);
-    if (window.avgNightEl) avgNightEl.textContent = fmt(avgNightPerDayMin);
-    if (window.avgKmEl) avgKmEl.textContent = avgKmPerDay;
-    if (window.fortnightDuty) fortnightDuty.textContent = fmt(fortnightDutyMin);
-    if (window.fortnightNight) fortnightNight.textContent = fmt(fortnightNightMin);
-    if (window.fortnightKm) fortnightKm.textContent = monthKm;
-    if (window.monthDuty) monthDuty.textContent = fmt(fortnightDutyMin);
     if (window.totalDuty) totalDuty.textContent = fmt(totalDutyMin);
     if (window.totalNight) totalNight.textContent = fmt(totalNightMin);
     if (window.totalKmEl) totalKmEl.textContent = totalKm;
-  } catch (e) {
-    // ignore any missing element errors
-  }
+  } catch {}
 }
 
 
