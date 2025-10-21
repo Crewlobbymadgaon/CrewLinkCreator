@@ -650,60 +650,7 @@ function updateSummary() {
     };
 
     // build HTML content (no destructive removal)
-    const summaryHtml = `
-      <div id="linkSummaryBlock" style="margin-top:12px;">
-        <table class="min-w-full text-center border-collapse" style="width:100%; border-collapse:collapse; font-size:0.95rem;">
-          <thead style="background:#f3f4f6; font-weight:600;">
-            <tr><th colspan="6" style="padding:10px; text-align:center; font-size:1rem;">Link Summary — ${hq} ${link}</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Total Duty Hrs</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(totalDutyMin)}</td>
-              <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Total Night Hrs</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(totalNightMin)}</td>
-              <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Total KM</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${totalKm}</td>
-            </tr>
-            <tr>
-              <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Avg Duty / Day</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(avgDutyPerDayMin)}</td>
-              <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Avg Night / Day</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(avgNightPerDayMin)}</td>
-              <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Avg KM / Day</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${avgKmPerDay}</td>
-            </tr>
-            <tr>
-              <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Fortnight Duty Hrs</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(fortnightDutyMin)}</td>
-              <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">Fortnight Night Hrs</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${fmt(fortnightNightMin)}</td>
-              <td style="border:1px solid #e5e7eb; padding:8px; font-weight:600;">KM / Month</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${monthKm}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    `;
 
-    // Ensure a non-destructive wrapper exists BELOW the duty table.
-    // If #summaryTableWrapper exists and was created earlier, reuse it; otherwise create.
-    let wrapper = document.getElementById('summaryTableWrapper');
-    // If wrapper exists but contains the old 'Summary Type' structure, we replace its innerHTML safely.
-    if (!wrapper) {
-      wrapper = document.createElement('div');
-      wrapper.id = 'summaryTableWrapper';
-      // Insert immediately after the dutyTable element (so summary is below table)
-      const dutyTable = document.getElementById('dutyTable');
-      if (dutyTable && dutyTable.parentNode) {
-        dutyTable.parentNode.insertBefore(wrapper, dutyTable.nextSibling);
-      } else {
-        const pdfArea = document.getElementById('pdfArea') || document.body;
-        pdfArea.appendChild(wrapper);
-      }
-    }
-    // Now set content
-    wrapper.innerHTML = summaryHtml;
 
     // Update legacy IDs if present (do not throw if missing)
 function updateSummary() {
