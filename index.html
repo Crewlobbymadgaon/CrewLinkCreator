@@ -488,15 +488,11 @@ function recalculateRow(idx) {
 
           
 
-
-
-
 function updateSummary() {
   try {
     const hq = (window.hqSelect && hqSelect.value) || (document.getElementById('hqSelect')?.value) || 'HQ';
     const link = (window.linkSelect && linkSelect.value) || (document.getElementById('linkSelect')?.value) || 'Link';
 
-    // read data, fallback to localStorage
     let data = (window.crewLinkData && crewLinkData[hq] && crewLinkData[hq][link]) ? crewLinkData[hq][link] : [];
     if ((!data || data.length === 0) && localStorage.getItem(`crewData-${hq}-${link}`)) {
       try {
@@ -509,15 +505,12 @@ function updateSummary() {
       }
     }
 
-    // helper to parse "HH:MM"
     const parseHm = (s) => {
       if (!s || typeof s !== 'string') return NaN;
       const m = s.match(/^(\d{1,2}):(\d{2})$/);
-      if (!m) return NaN;
-      return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+      return m ? parseInt(m[1]) * 60 + parseInt(m[2]) : NaN;
     };
 
-    // compute totals
     let totalDutyMin = 0, totalNightMin = 0, totalKm = 0;
     for (const row of data) {
       const norm = Array.from({ length: 13 }).map((_, i) => row?.[i] ?? '--');
@@ -543,7 +536,6 @@ function updateSummary() {
       }
     }
 
-    // averages
     const men = (typeof crewLinkMen !== 'undefined' && crewLinkMen?.[hq]?.[link]) ? Number(crewLinkMen[hq][link]) || 1 : 1;
     const totalDays = Math.max(1, 7 * men, data.length);
     const avgDutyPerDayMin = Math.round(totalDutyMin / totalDays);
@@ -552,17 +544,14 @@ function updateSummary() {
     const fortnightDutyMin = Math.round(avgDutyPerDayMin * 14);
     const fortnightNightMin = Math.round(avgNightPerDayMin * 14);
     const monthKm = Math.round(avgKmPerDay * 30);
-
     const fmt = (mins) => isNaN(mins) ? "--" : `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 
-    // remove any old summaries
     document.querySelectorAll('#linkSummaryBlock, #summaryTableWrapper, #summaryTable').forEach(el => el.remove());
 
-    // build new styled summary HTML
     const html = `
       <div class="summary-card" id="linkSummaryBlock" style="text-align:center;">
         <div class="summary-title" style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:1.1rem;font-weight:800;color:#08203b;margin-bottom:8px;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
             <path d="M3 12h18M3 6h18M3 18h18" stroke="#0f172a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           <span>${hq} ${link} — Link Summary</span>
@@ -572,35 +561,36 @@ function updateSummary() {
           <thead><tr><th colspan="6" style="padding:8px;background:#f0f4ff;color:#1e3a8a;">Overview</th></tr></thead>
           <tbody>
             <tr>
-              <td class="summary-key" style="font-weight:600;">Total Duty Hrs</td>
+              <td style="font-weight:600;">Total Duty Hrs</td>
               <td>${fmt(totalDutyMin)}</td>
-              <td class="summary-key" style="font-weight:600;">Total Night Hrs</td>
+              <td style="font-weight:600;">Total Night Hrs</td>
               <td>${fmt(totalNightMin)}</td>
-              <td class="summary-key" style="font-weight:600;">Total KM</td>
+              <td style="font-weight:600;">Total KM</td>
               <td>${totalKm}</td>
             </tr>
             <tr>
-              <td class="summary-key" style="font-weight:600;">Avg Duty / Day</td>
+              <td style="font-weight:600;">Avg Duty / Day</td>
               <td>${fmt(avgDutyPerDayMin)}</td>
-              <td class="summary-key" style="font-weight:600;">Avg Night / Day</td>
+              <td style="font-weight:600;">Avg Night / Day</td>
               <td>${fmt(avgNightPerDayMin)}</td>
-              <td class="summary-key" style="font-weight:600;">Avg KM / Day</td>
+              <td style="font-weight:600;">Avg KM / Day</td>
               <td>${avgKmPerDay}</td>
             </tr>
-            <tr class="fortnight-row" style="font-weight:700;background:linear-gradient(90deg,#fff7ed,#fff3d1);color:#92400e;font-size:1rem;">
+            <tr class="fortnight-row"
+                style="font-weight:700;background:linear-gradient(90deg,#fff7ed,#fff3d1);
+                       color:#92400e;font-size:1rem;">
               <td>Fortnight Duty Hrs</td>
-              <td style="color:#b45309;font-weight:800;">${fmt(fortnightDutyMin)}</td>
+              <td style="font-weight:800;">${fmt(fortnightDutyMin)}</td>
               <td>Fortnight Night Hrs</td>
-              <td style="color:#b45309;font-weight:800;">${fmt(fortnightNightMin)}</td>
+              <td style="font-weight:800;">${fmt(fortnightNightMin)}</td>
               <td>KM / Month</td>
-              <td style="color:#1d4ed8;font-weight:900;">${monthKm}</td>
+              <td style="font-weight:800;">${monthKm}</td>
             </tr>
           </tbody>
         </table>
       </div>
     `;
 
-    // insert summary below the table
     const dutyTable = document.getElementById('dutyTable');
     const wrapper = document.createElement('div');
     wrapper.id = 'summaryTableWrapper';
@@ -609,44 +599,20 @@ function updateSummary() {
 
     if (dutyTable) {
       const container = dutyTable.closest('.overflow-x-auto') || dutyTable;
-      if (!container.nextElementSibling || container.nextElementSibling.id !== 'summaryTableWrapper') {
+      if (!container.nextElementSibling || container.nextElementSibling.id !== 'summaryTableWrapper')
         container.insertAdjacentElement('afterend', wrapper);
-      } else {
-        container.parentNode.replaceChild(wrapper, container.nextElementSibling);
-      }
+      else container.parentNode.replaceChild(wrapper, container.nextElementSibling);
     } else {
       const pdfArea = document.getElementById('pdfArea') || document.body;
       const old = pdfArea.querySelector('#summaryTableWrapper');
-      if (old) old.replaceWith(wrapper);
-      else pdfArea.appendChild(wrapper);
+      if (old) old.replaceWith(wrapper); else pdfArea.appendChild(wrapper);
     }
 
-    // update legacy summary values if needed
-    try {
-      if (window.avgDutyEl) avgDutyEl.textContent = fmt(avgDutyPerDayMin);
-      if (window.avgNightEl) avgNightEl.textContent = fmt(avgNightPerDayMin);
-      if (window.avgKmEl) avgKmEl.textContent = avgKmPerDay;
-      if (window.fortnightDuty) fortnightDuty.textContent = fmt(fortnightDutyMin);
-      if (window.fortnightNight) fortnightNight.textContent = fmt(fortnightNightMin);
-      if (window.fortnightKm) fortnightKm.textContent = monthKm;
-      if (window.monthDuty) monthDuty.textContent = fmt(fortnightDutyMin);
-      if (window.totalDuty) totalDuty.textContent = fmt(totalDutyMin);
-      if (window.totalNight) totalNight.textContent = fmt(totalNightMin);
-      if (window.totalKmEl) totalKmEl.textContent = totalKm;
-    } catch {}
   } catch (err) {
     console.error('updateSummary failed:', err);
-    let dbg = document.getElementById('summaryErrorDebug');
-    if (!dbg) {
-      dbg = document.createElement('div');
-      dbg.id = 'summaryErrorDebug';
-      dbg.style.color = 'red';
-      dbg.style.fontSize = '12px';
-      (document.getElementById('pdfArea') || document.body).appendChild(dbg);
-    }
-    dbg.textContent = 'Summary update failed — check console.';
   }
 }
+
 
 
 function saveToLocalStorage(hq, link) {
