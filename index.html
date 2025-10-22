@@ -486,12 +486,17 @@ function recalculateRow(idx) {
 }
 
 
-          function updateSummary() {
+          
+
+
+
+
+function updateSummary() {
   try {
     const hq = (window.hqSelect && hqSelect.value) || (document.getElementById('hqSelect')?.value) || 'HQ';
     const link = (window.linkSelect && linkSelect.value) || (document.getElementById('linkSelect')?.value) || 'Link';
 
-    // read in-memory data, fallback to localStorage if empty
+    // read data, fallback to localStorage
     let data = (window.crewLinkData && crewLinkData[hq] && crewLinkData[hq][link]) ? crewLinkData[hq][link] : [];
     if ((!data || data.length === 0) && localStorage.getItem(`crewData-${hq}-${link}`)) {
       try {
@@ -499,13 +504,12 @@ function recalculateRow(idx) {
         if (!window.crewLinkData) window.crewLinkData = {};
         if (!window.crewLinkData[hq]) window.crewLinkData[hq] = {};
         window.crewLinkData[hq][link] = data;
-      } catch (e) {
-        console.warn('Could not parse localStorage crew data:', e);
+      } catch {
         data = [];
       }
     }
 
-    // helper: parse "HH:MM" -> minutes of day (NaN if invalid)
+    // helper to parse "HH:MM"
     const parseHm = (s) => {
       if (!s || typeof s !== 'string') return NaN;
       const m = s.match(/^(\d{1,2}):(\d{2})$/);
@@ -513,56 +517,35 @@ function recalculateRow(idx) {
       return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
     };
 
-    // accumulate totals
-    let totalDutyMin = 0;
-    let totalNightMin = 0;
-    let totalKm = 0;
-
-    for (let i = 0; i < data.length; i++) {
-      const row = data[i] || [];
-
-      // normalize row length to avoid undefined
-      // expected indices: 0-train,1-from,2-to,3-dep,4-arr,5-signOn,6-signOff,7-duty,8-night,9-km,10-hqRest,11-osRest,12-day
-      const norm = Array.from({length: 13}).map((_, idx) => {
-        return (typeof row[idx] !== 'undefined' && row[idx] !== null && row[idx] !== '') ? row[idx] : '--';
-      });
-
-      // duty: prefer stored row[7], else compute from sign-on/sign-off
+    // compute totals
+    let totalDutyMin = 0, totalNightMin = 0, totalKm = 0;
+    for (const row of data) {
+      const norm = Array.from({ length: 13 }).map((_, i) => row?.[i] ?? '--');
       let dutyMin = parseHm(norm[7]);
       const signOnMin = parseHm(norm[5]);
       const signOffMin = parseHm(norm[6]);
-
       if (isNaN(dutyMin) && !isNaN(signOnMin) && !isNaN(signOffMin)) {
         dutyMin = signOffMin - signOnMin;
         if (dutyMin < 0) dutyMin += 1440;
       }
       if (!isNaN(dutyMin)) totalDutyMin += dutyMin;
 
-      // night: prefer stored row[8], else compute with calcNightHours
       let nightMin = parseHm(norm[8]);
-      if (isNaN(nightMin) && !isNaN(signOnMin) && !isNaN(dutyMin)) {
-        // calcNightHours expects start and end minutes (end may wrap)
+      if (isNaN(nightMin) && !isNaN(signOnMin) && !isNaN(dutyMin))
         nightMin = calcNightHours(signOnMin, (signOnMin + dutyMin) % 1440);
-      }
       if (!isNaN(nightMin)) totalNightMin += nightMin;
 
-      // km: prefer numeric stored, else fallback to kmMap using from-to
-      const kmCandidate = parseInt(norm[9]);
-      if (!isNaN(kmCandidate)) totalKm += kmCandidate;
+      const kmVal = parseInt(norm[9]);
+      if (!isNaN(kmVal)) totalKm += kmVal;
       else {
-        const from = (norm[1] || '').toString();
-        const to = (norm[2] || '').toString();
-        const fallbackKm = kmMap[`${from}-${to}`] || kmMap[`${to}-${from}`];
-        if (!isNaN(fallbackKm)) totalKm += fallbackKm;
+        const kmAlt = kmMap[`${norm[1]}-${norm[2]}`] || kmMap[`${norm[2]}-${norm[1]}`];
+        if (!isNaN(kmAlt)) totalKm += kmAlt;
       }
     }
 
-    // men/days calculation (fallback to 1)
+    // averages
     const men = (typeof crewLinkMen !== 'undefined' && crewLinkMen?.[hq]?.[link]) ? Number(crewLinkMen[hq][link]) || 1 : 1;
-    // choose a sensible denominator so averages are stable
     const totalDays = Math.max(1, 7 * men, data.length);
-
-    // derived values
     const avgDutyPerDayMin = Math.round(totalDutyMin / totalDays);
     const avgNightPerDayMin = Math.round(totalNightMin / totalDays);
     const avgKmPerDay = Math.round(totalKm / totalDays);
@@ -570,61 +553,54 @@ function recalculateRow(idx) {
     const fortnightNightMin = Math.round(avgNightPerDayMin * 14);
     const monthKm = Math.round(avgKmPerDay * 30);
 
-    const fmt = (mins) => {
-      if (isNaN(mins)) return "--";
-      const h = Math.floor(mins / 60).toString().padStart(2, '0');
-      const m = (mins % 60).toString().padStart(2, '0');
-      return `${h}:${m}`;
-    };
+    const fmt = (mins) => isNaN(mins) ? "--" : `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 
-    // build styled HTML for the new summary (you can customize this block's html/css as needed)
+    // remove any old summaries
+    document.querySelectorAll('#linkSummaryBlock, #summaryTableWrapper, #summaryTable').forEach(el => el.remove());
+
+    // build new styled summary HTML
     const html = `
-      <div class="summary-card" id="linkSummaryBlock">
-        <div class="summary-title">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M3 12h18M3 6h18M3 18h18" stroke="#0f172a" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <div class="summary-card" id="linkSummaryBlock" style="text-align:center;">
+        <div class="summary-title" style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:1.1rem;font-weight:800;color:#08203b;margin-bottom:8px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 12h18M3 6h18M3 18h18" stroke="#0f172a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           <span>${hq} ${link} — Link Summary</span>
         </div>
 
-        <table class="summary-table" role="table" aria-label="Link summary">
-          <thead><tr><th colspan="6">Overview</th></tr></thead>
+        <table class="summary-table" style="width:100%;border-collapse:collapse;font-size:0.95rem;margin-top:4px;">
+          <thead><tr><th colspan="6" style="padding:8px;background:#f0f4ff;color:#1e3a8a;">Overview</th></tr></thead>
           <tbody>
             <tr>
-              <td class="summary-key">Total Duty Hrs</td>
-              <td class="summary-value">${fmt(totalDutyMin)}</td>
-              <td class="summary-key">Total Night Hrs</td>
-              <td class="summary-value">${fmt(totalNightMin)}</td>
-              <td class="summary-key">Total KM</td>
-              <td class="summary-value">${totalKm}</td>
+              <td class="summary-key" style="font-weight:600;">Total Duty Hrs</td>
+              <td>${fmt(totalDutyMin)}</td>
+              <td class="summary-key" style="font-weight:600;">Total Night Hrs</td>
+              <td>${fmt(totalNightMin)}</td>
+              <td class="summary-key" style="font-weight:600;">Total KM</td>
+              <td>${totalKm}</td>
             </tr>
-
             <tr>
-              <td class="summary-key">Avg Duty / Day</td>
-              <td class="summary-value">${fmt(avgDutyPerDayMin)}</td>
-              <td class="summary-key">Avg Night / Day</td>
-              <td class="summary-value">${fmt(avgNightPerDayMin)}</td>
-              <td class="summary-key">Avg KM / Day</td>
-              <td class="summary-value">${avgKmPerDay}</td>
+              <td class="summary-key" style="font-weight:600;">Avg Duty / Day</td>
+              <td>${fmt(avgDutyPerDayMin)}</td>
+              <td class="summary-key" style="font-weight:600;">Avg Night / Day</td>
+              <td>${fmt(avgNightPerDayMin)}</td>
+              <td class="summary-key" style="font-weight:600;">Avg KM / Day</td>
+              <td>${avgKmPerDay}</td>
             </tr>
-
-            <tr class="fortnight-row">
-              <td class="summary-key">Fortnight Duty Hrs</td>
-              <td class="summary-value">${fmt(fortnightDutyMin)}</td>
-              <td class="summary-key">Fortnight Night Hrs</td>
-              <td class="summary-value">${fmt(fortnightNightMin)}</td>
-              <td class="summary-key">KM / Month</td>
-              <td class="summary-value km-month">${monthKm}</td>
+            <tr class="fortnight-row" style="font-weight:700;background:linear-gradient(90deg,#fff7ed,#fff3d1);color:#92400e;font-size:1rem;">
+              <td>Fortnight Duty Hrs</td>
+              <td style="color:#b45309;font-weight:800;">${fmt(fortnightDutyMin)}</td>
+              <td>Fortnight Night Hrs</td>
+              <td style="color:#b45309;font-weight:800;">${fmt(fortnightNightMin)}</td>
+              <td>KM / Month</td>
+              <td style="color:#1d4ed8;font-weight:900;">${monthKm}</td>
             </tr>
           </tbody>
         </table>
       </div>
     `;
 
-    // --- REMOVE old summary blocks (both the generated and any older static summaries) ---
-    document.querySelectorAll('#linkSummaryBlock, #summaryTableWrapper, #summaryTable').forEach(el => el.remove());
-
-    // insert AFTER the duty table's container so it appears below the table
+    // insert summary below the table
     const dutyTable = document.getElementById('dutyTable');
     const wrapper = document.createElement('div');
     wrapper.id = 'summaryTableWrapper';
@@ -633,7 +609,6 @@ function recalculateRow(idx) {
 
     if (dutyTable) {
       const container = dutyTable.closest('.overflow-x-auto') || dutyTable;
-      // if next sibling is already our wrapper, replace it, otherwise insert after
       if (!container.nextElementSibling || container.nextElementSibling.id !== 'summaryTableWrapper') {
         container.insertAdjacentElement('afterend', wrapper);
       } else {
@@ -641,11 +616,12 @@ function recalculateRow(idx) {
       }
     } else {
       const pdfArea = document.getElementById('pdfArea') || document.body;
-      if (!pdfArea.querySelector('#summaryTableWrapper')) pdfArea.appendChild(wrapper);
-      else pdfArea.querySelector('#summaryTableWrapper').replaceWith(wrapper);
+      const old = pdfArea.querySelector('#summaryTableWrapper');
+      if (old) old.replaceWith(wrapper);
+      else pdfArea.appendChild(wrapper);
     }
 
-    // update legacy small-summary fields if they exist (silent)
+    // update legacy summary values if needed
     try {
       if (window.avgDutyEl) avgDutyEl.textContent = fmt(avgDutyPerDayMin);
       if (window.avgNightEl) avgNightEl.textContent = fmt(avgNightPerDayMin);
@@ -657,10 +633,7 @@ function recalculateRow(idx) {
       if (window.totalDuty) totalDuty.textContent = fmt(totalDutyMin);
       if (window.totalNight) totalNight.textContent = fmt(totalNightMin);
       if (window.totalKmEl) totalKmEl.textContent = totalKm;
-    } catch (e) {
-      // ignore if legacy nodes aren't present
-    }
-
+    } catch {}
   } catch (err) {
     console.error('updateSummary failed:', err);
     let dbg = document.getElementById('summaryErrorDebug');
