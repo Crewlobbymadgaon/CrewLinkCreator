@@ -489,84 +489,36 @@ function recalculateRow(idx) {
 
 function updateSummary() {
   try {
+    // safe element refs
     const hq = (window.hqSelect && hqSelect.value) || (document.getElementById('hqSelect')?.value) || 'HQ';
     const link = (window.linkSelect && linkSelect.value) || (document.getElementById('linkSelect')?.value) || 'Link';
     const data = (window.crewLinkData && crewLinkData[hq] && crewLinkData[hq][link]) ? crewLinkData[hq][link] : [];
 
-    // If no duties, show a friendly message (instead of zeros)
-    if (!data || data.length === 0) {
-      // remove any old summary nodes
-      document.querySelectorAll('#summaryTableWrapper, #linkSummaryBlock').forEach(el => el.remove());
-
-      const wrapper = document.createElement('div');
-      wrapper.id = 'summaryTableWrapper';
-      wrapper.className = 'mt-4';
-      wrapper.innerHTML = `
-        <div id="linkSummaryBlock" style="margin-top:12px;">
-          <table style="width:100%; border-collapse:collapse; text-align:center;">
-            <thead style="background:#f3f4f6; font-weight:600;">
-              <tr><th style="padding:10px;">Link Summary — ${hq} ${link}</th></tr>
-            </thead>
-            <tbody>
-              <tr><td style="padding:12px;">No duties added for this Link/HQ.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      `;
-      const dutyTable = document.getElementById('dutyTable');
-      const container = dutyTable?.closest('.overflow-x-auto') || dutyTable || document.getElementById('pdfArea') || document.body;
-      container.insertAdjacentElement('afterend', wrapper);
-      // clear legacy little fields if present
-      if (window.avgDutyEl) avgDutyEl.textContent = "--";
-      if (window.avgNightEl) avgNightEl.textContent = "--";
-      if (window.avgKmEl) avgKmEl.textContent = "--";
-      if (window.totalDuty) totalDuty.textContent = "--";
-      if (window.totalNight) totalNight.textContent = "--";
-      if (window.totalKmEl) totalKmEl.textContent = "--";
-      return;
-    }
-
-    // compute totals robustly
+    // compute totals
     let totalDutyMin = 0, totalNightMin = 0, totalKm = 0;
     for (const row of data) {
-      // row[7] = duty (expected "HH:MM" or minutes number)
-      // row[8] = night
-      // row[9] = km
-      const dutyRaw = (row?.[7] ?? "").toString().trim();
-      const nightRaw = (row?.[8] ?? "").toString().trim();
-      const kmRaw = (row?.[9] ?? "").toString().trim();
-
-      // parse HH:MM -> minutes, or plain integer minutes
-      const parseMinutes = (s) => {
-        if (!s || s === '--') return NaN;
-        const hhmm = s.match(/^(\d{1,3}):([0-5]\d)$/);
-        if (hhmm) return parseInt(hhmm[1], 10) * 60 + parseInt(hhmm[2], 10);
-        const num = parseInt(s.replace(/[^\d-]/g, ''), 10);
-        return isNaN(num) ? NaN : num;
-      };
-
-      const dMin = parseMinutes(dutyRaw);
-      const nMin = parseMinutes(nightRaw);
-
-      if (!isNaN(dMin)) totalDutyMin += dMin;
-      if (!isNaN(nMin)) totalNightMin += nMin;
-
-      // km may include text like "294 km" or be "--"; extract digits
-      const kmMatch = kmRaw.match(/(-?\d+)/);
-      if (kmMatch) {
-        const k = parseInt(kmMatch[1], 10);
-        if (!isNaN(k)) totalKm += k;
+      const duty = (row?.[7] || "--").toString();
+      const night = (row?.[8] || "--").toString();
+      const kmVal = parseInt(row?.[9]);
+      if (/^\d{1,2}:\d{2}$/.test(duty)) {
+        const [dh, dm] = duty.split(':').map(Number);
+        totalDutyMin += dh * 60 + dm;
       }
+      if (/^\d{1,2}:\d{2}$/.test(night)) {
+        const [nh, nm] = night.split(':').map(Number);
+        totalNightMin += nh * 60 + nm;
+      }
+      if (!isNaN(kmVal)) totalKm += kmVal;
     }
 
-    // men/days
+    // men/days calculation
     const men = (typeof crewLinkMen !== 'undefined' && crewLinkMen?.[hq]?.[link]) ? crewLinkMen[hq][link] : 1;
     const totalDays = Math.max(1, 7 * men);
 
+    // averages and derived values
     const avgDutyPerDayMin = Math.round(totalDutyMin / totalDays);
     const avgNightPerDayMin = Math.round(totalNightMin / totalDays);
     const avgKmPerDay = Math.round(totalKm / totalDays);
-
     const fortnightDutyMin = Math.round(avgDutyPerDayMin * 14);
     const fortnightNightMin = Math.round(avgNightPerDayMin * 14);
     const monthKm = Math.round(avgKmPerDay * 30);
@@ -578,15 +530,10 @@ function updateSummary() {
       return `${h}:${m}`;
     };
 
-    // if totals are zero, show a compact debug sample in console to diagnose storage format
-    if (totalDutyMin === 0 && totalNightMin === 0 && totalKm === 0) {
-      console.debug("updateSummary debug: data length =", data.length, "sample rows:", JSON.parse(JSON.stringify(data.slice(0,5))));
-    }
+    // remove any old summary nodes (prevents duplicates)
+    document.querySelectorAll('#summaryTableWrapper, #summaryTable, #linkSummaryBlock').forEach(el => el.remove());
 
-    // remove old summary nodes to avoid duplicates
-    document.querySelectorAll('#summaryTableWrapper, #linkSummaryBlock').forEach(el => el.remove());
-
-    // Build HTML (KM / Month label)
+    // build fresh summary HTML (KM / Month label included)
     const html = `
       <div id="linkSummaryBlock" style="margin-top:12px;">
         <table class="min-w-full text-center border-collapse" style="width:100%; border-collapse:collapse; font-size:0.95rem;">
@@ -623,21 +570,26 @@ function updateSummary() {
       </div>
     `;
 
-    // insert below duty table (prefer the overflow wrapper)
-    const wrapper = document.createElement('div');
+    // create wrapper and insert it AFTER the duty table's container,
+    // prefer the scrolling wrapper if present so summary is below the table visually
+    let wrapper = document.createElement('div');
     wrapper.id = 'summaryTableWrapper';
     wrapper.className = 'mt-4';
     wrapper.innerHTML = html;
+
     const dutyTable = document.getElementById('dutyTable');
     if (dutyTable) {
+      // prefer the overflow container if present
       const container = dutyTable.closest('.overflow-x-auto') || dutyTable;
+      // insert AFTER the container
       container.insertAdjacentElement('afterend', wrapper);
     } else {
+      // fallback: append to pdfArea
       const pdfArea = document.getElementById('pdfArea') || document.body;
       pdfArea.appendChild(wrapper);
     }
 
-    // update small legacy fields if present (non-throwing)
+    // update legacy small-summary fields if they exist
     try {
       if (window.avgDutyEl) avgDutyEl.textContent = fmt(avgDutyPerDayMin);
       if (window.avgNightEl) avgNightEl.textContent = fmt(avgNightPerDayMin);
@@ -649,11 +601,13 @@ function updateSummary() {
       if (window.totalDuty) totalDuty.textContent = fmt(totalDutyMin);
       if (window.totalNight) totalNight.textContent = fmt(totalNightMin);
       if (window.totalKmEl) totalKmEl.textContent = totalKm;
-    } catch (e) { /* ignore missing legacy nodes */ }
+    } catch (e) {
+      // ignore missing legacy elements
+    }
 
   } catch (err) {
     console.error('updateSummary failed:', err);
-    // tiny non-blocking notice
+    // show small non-blocking message
     let dbg = document.getElementById('summaryErrorDebug');
     if (!dbg) {
       dbg = document.createElement('div');
@@ -662,11 +616,9 @@ function updateSummary() {
       dbg.style.fontSize = '12px';
       (document.getElementById('pdfArea') || document.body).appendChild(dbg);
     }
-    dbg.textContent = 'Summary update failed — see console.';
+    dbg.textContent = 'Summary update failed — check console.';
   }
 }
-
-
 
 function saveToLocalStorage(hq, link) {
   localStorage.setItem(`crewData-${hq}-${link}`, JSON.stringify(crewLinkData[hq][link]));
