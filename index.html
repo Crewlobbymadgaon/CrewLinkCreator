@@ -486,36 +486,77 @@ function recalculateRow(idx) {
 }
 
 
-
 function updateSummary() {
   try {
-    // safe element refs
+    // pick up selectors safely
     const hq = (window.hqSelect && hqSelect.value) || (document.getElementById('hqSelect')?.value) || 'HQ';
     const link = (window.linkSelect && linkSelect.value) || (document.getElementById('linkSelect')?.value) || 'Link';
-    const data = (window.crewLinkData && crewLinkData[hq] && crewLinkData[hq][link]) ? crewLinkData[hq][link] : [];
 
-    // compute totals
-    let totalDutyMin = 0, totalNightMin = 0, totalKm = 0;
-    for (const row of data) {
-      const duty = (row?.[7] || "--").toString();
-      const night = (row?.[8] || "--").toString();
-      const kmVal = parseInt(row?.[9]);
-      if (/^\d{1,2}:\d{2}$/.test(duty)) {
-        const [dh, dm] = duty.split(':').map(Number);
-        totalDutyMin += dh * 60 + dm;
+    // get in-memory data, fallback to localStorage if empty
+    let data = (window.crewLinkData && crewLinkData[hq] && crewLinkData[hq][link]) ? crewLinkData[hq][link] : [];
+    if ((!data || data.length === 0) && localStorage.getItem(`crewData-${hq}-${link}`)) {
+      try {
+        data = JSON.parse(localStorage.getItem(`crewData-${hq}-${link}`)) || [];
+        if (!window.crewLinkData) window.crewLinkData = {};
+        if (!window.crewLinkData[hq]) window.crewLinkData[hq] = {};
+        window.crewLinkData[hq][link] = data;
+      } catch (e) {
+        console.warn('Could not parse localStorage crew data:', e);
+        data = [];
       }
-      if (/^\d{1,2}:\d{2}$/.test(night)) {
-        const [nh, nm] = night.split(':').map(Number);
-        totalNightMin += nh * 60 + nm;
-      }
-      if (!isNaN(kmVal)) totalKm += kmVal;
     }
 
-    // men/days calculation
-    const men = (typeof crewLinkMen !== 'undefined' && crewLinkMen?.[hq]?.[link]) ? crewLinkMen[hq][link] : 1;
-    const totalDays = Math.max(1, 7 * men);
+    // helper to parse "HH:MM" into minutes; returns NaN if invalid
+    const parseHm = (s) => {
+      if (!s || typeof s !== 'string') return NaN;
+      const m = s.match(/^(\d{1,2}):(\d{2})$/);
+      if (!m) return NaN;
+      return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+    };
 
-    // averages and derived values
+    // accumulate totals
+    let totalDutyMin = 0;
+    let totalNightMin = 0;
+    let totalKm = 0;
+
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i] || [];
+      // duty: prefer stored row[7], else compute from sign-on/sign-off
+      let dutyMin = parseHm(row[7]);
+      const signOnMin = parseHm(row[5]);
+      const signOffMin = parseHm(row[6]);
+
+      if (isNaN(dutyMin) && !isNaN(signOnMin) && !isNaN(signOffMin)) {
+        dutyMin = signOffMin - signOnMin;
+        if (dutyMin < 0) dutyMin += 1440;
+      }
+
+      if (!isNaN(dutyMin)) totalDutyMin += dutyMin;
+
+      // night hours: prefer stored row[8], else compute using calcNightHours
+      let nightMin = parseHm(row[8]);
+      if (isNaN(nightMin) && !isNaN(signOnMin) && !isNaN(dutyMin)) {
+        nightMin = calcNightHours(signOnMin, (signOnMin + dutyMin) % 1440);
+      }
+      if (!isNaN(nightMin)) totalNightMin += nightMin;
+
+      // km: prefer numeric stored value, else fallback to kmMap using from-to
+      const kmCandidate = parseInt(row[9]);
+      if (!isNaN(kmCandidate)) totalKm += kmCandidate;
+      else {
+        const from = (row[1] || '').toString();
+        const to = (row[2] || '').toString();
+        const fallbackKm = kmMap[`${from}-${to}`] || kmMap[`${to}-${from}`];
+        if (!isNaN(fallbackKm)) totalKm += fallbackKm;
+      }
+    }
+
+    // men/days calculation (fallback to 1)
+    const men = (typeof crewLinkMen !== 'undefined' && crewLinkMen?.[hq]?.[link]) ? Number(crewLinkMen[hq][link]) || 1 : 1;
+    // use the largest sensible denominator so averages don't blow up when men is missing
+    const totalDays = Math.max(1, 7 * men, data.length);
+
+    // derived values
     const avgDutyPerDayMin = Math.round(totalDutyMin / totalDays);
     const avgNightPerDayMin = Math.round(totalNightMin / totalDays);
     const avgKmPerDay = Math.round(totalKm / totalDays);
@@ -523,6 +564,7 @@ function updateSummary() {
     const fortnightNightMin = Math.round(avgNightPerDayMin * 14);
     const monthKm = Math.round(avgKmPerDay * 30);
 
+    // formatter for HH:MM
     const fmt = (mins) => {
       if (isNaN(mins)) return "--";
       const h = Math.floor(mins / 60).toString().padStart(2, '0');
@@ -530,10 +572,11 @@ function updateSummary() {
       return `${h}:${m}`;
     };
 
-    // remove any old summary nodes (prevents duplicates)
-    document.querySelectorAll('#summaryTableWrapper, #summaryTable, #linkSummaryBlock').forEach(el => el.remove());
+    // remove only previously generated summary block (avoid wiping other DOM)
+    const prevBlock = document.getElementById('linkSummaryBlock');
+    if (prevBlock) prevBlock.remove();
 
-    // build fresh summary HTML (KM / Month label included)
+    // build new block HTML
     const html = `
       <div id="linkSummaryBlock" style="margin-top:12px;">
         <table class="min-w-full text-center border-collapse" style="width:100%; border-collapse:collapse; font-size:0.95rem;">
@@ -570,26 +613,21 @@ function updateSummary() {
       </div>
     `;
 
-    // create wrapper and insert it AFTER the duty table's container,
-    // prefer the scrolling wrapper if present so summary is below the table visually
+    // insert after the scroll container / table
+    const dutyTable = document.getElementById('dutyTable');
     let wrapper = document.createElement('div');
     wrapper.id = 'summaryTableWrapper';
     wrapper.className = 'mt-4';
     wrapper.innerHTML = html;
 
-    const dutyTable = document.getElementById('dutyTable');
     if (dutyTable) {
-      // prefer the overflow container if present
       const container = dutyTable.closest('.overflow-x-auto') || dutyTable;
-      // insert AFTER the container
       container.insertAdjacentElement('afterend', wrapper);
     } else {
-      // fallback: append to pdfArea
-      const pdfArea = document.getElementById('pdfArea') || document.body;
-      pdfArea.appendChild(wrapper);
+      (document.getElementById('pdfArea') || document.body).appendChild(wrapper);
     }
 
-    // update legacy small-summary fields if they exist
+    // update legacy small-summary fields if present
     try {
       if (window.avgDutyEl) avgDutyEl.textContent = fmt(avgDutyPerDayMin);
       if (window.avgNightEl) avgNightEl.textContent = fmt(avgNightPerDayMin);
@@ -601,13 +639,10 @@ function updateSummary() {
       if (window.totalDuty) totalDuty.textContent = fmt(totalDutyMin);
       if (window.totalNight) totalNight.textContent = fmt(totalNightMin);
       if (window.totalKmEl) totalKmEl.textContent = totalKm;
-    } catch (e) {
-      // ignore missing legacy elements
-    }
+    } catch (e) { /* ignore missing elements */ }
 
   } catch (err) {
     console.error('updateSummary failed:', err);
-    // show small non-blocking message
     let dbg = document.getElementById('summaryErrorDebug');
     if (!dbg) {
       dbg = document.createElement('div');
