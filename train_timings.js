@@ -3,8 +3,8 @@ const trainTimings = {
       { train: "20645", dep: "18:10", arr: "22:45" },
       { train: "12619", dep: "01:15", arr: "07:40" },
       { train: "56615", dep: "14:10", arr: "21:05" },
-      { train: "SP/56615", dep: "14:10", arr: "21:05" },
-      { train: "SP/20645", dep: "18:10", arr: "22:45" },
+      { train: "SP 56615", dep: "14:10", arr: "21:05" },
+      { train: "SP 20645", dep: "18:10", arr: "22:45" },
       { train: "SP/10107", dep: "04:00", arr: "11:15" }
     ],
     "MAQ-MAO": [
@@ -13,7 +13,7 @@ const trainTimings = {
       { train: "12620", dep: "14:20", arr: "20:00" },
       { train: "10108/SP", dep: "15:30", arr: "22:20" },
       { train: "16585/SP", dep: "08:40", arr: "17:00" },
-      { train: "SP/20646", dep: "08:30", arr: "13:10" },
+      { train: "SP 20646", dep: "08:30", arr: "13:10" },
       { train: "12789/SP", dep: "09:30", arr: "17:00" }
     ],
     "MAO-RN": [
