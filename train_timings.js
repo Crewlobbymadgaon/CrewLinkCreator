@@ -254,7 +254,8 @@ const trainTimings = {
       { train: "12741", dep: "19:00", arr: "19:50" }
       ],
      "MAO-KAWR": [
-      { train: "70101", dep: "19:00", arr: "20:30" }
+      { train: "70101", dep: "19:00", arr: "20:30" },
+      { train: "SP 12618", dep: "16:10", arr: "17:08" }
     ],
      "KAWR-MAO": [
       { train: "70102", dep: "06:00", arr: "07:15" }
