@@ -263,6 +263,9 @@ const trainTimings = {
     
          "MAQ-SL": [
       { train: "16585", dep: "08:40", arr: "09:48" }
-    ]
+    ],
+     "KAWR-MAJN": [
+      { train: "16516", dep: "05:30", arr: "11:10" }
+    ],
     
 };
