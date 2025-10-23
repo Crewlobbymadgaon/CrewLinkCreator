@@ -218,11 +218,12 @@ const trainTimings = {
     ],
      "MAO-MRDW": [
       { train: "10107", dep: "04:00", arr: "06:30" },
-      { train: "SP/10107", dep: "04:00", arr: "06:30" }
+      { train: "SP/10107", dep: "04:00", arr: "06:30" },
+      { train: "SP 10107", dep: "04:00", arr: "06:30" }
     ],
      "MRDW-MAO": [
       { train: "10108", dep: "18:36", arr: "22:20" },
-      { train: "SP/10108", dep: "18:36", arr: "22:20" }
+      { train: "SP 10108", dep: "18:36", arr: "22:20" }
       
     ],
      "MRDW-MAQ": [
